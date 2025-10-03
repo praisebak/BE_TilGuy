@@ -1,5 +1,6 @@
 package com.tilguys.matilda.tag.service;
 
+import com.tilguys.matilda.common.dlq.service.DLQService;
 import com.tilguys.matilda.tag.domain.OutboxEventStatus;
 import com.tilguys.matilda.tag.domain.TagCreationOutboxEvent;
 import com.tilguys.matilda.tag.repository.TagCreationOutboxEventRepository;
@@ -12,6 +13,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -22,13 +25,29 @@ public class TagCreationOutboxService {
 
     private final TagCreationOutboxEventRepository outboxRepository;
     private final TilTagService tilTagService;
+    private final DLQService dlqService;
 
     public TagCreationOutboxService(
             TagCreationOutboxEventRepository outboxRepository,
-            @Lazy TilTagService tilTagService
+            @Lazy TilTagService tilTagService,
+            DLQService dlqService
     ) {
         this.outboxRepository = outboxRepository;
         this.tilTagService = tilTagService;
+        this.dlqService = dlqService;
+    }
+
+    private static boolean validateEvent(Long eventId, TagCreationOutboxEvent event) {
+        if (event == null) {
+            log.warn("Outbox event {} not found", eventId);
+            return true;
+        }
+
+        if (event.getStatus() != OutboxEventStatus.PENDING) {
+            log.warn("Event {} is not pending (status: {}), skipping", eventId, event.getStatus());
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -74,24 +93,16 @@ public class TagCreationOutboxService {
         TagCreationOutboxEvent event = outboxRepository.findById(eventId)
                 .orElse(null);
 
-        if (event == null) {
-            log.warn("Outbox event {} not found", eventId);
-            return;
-        }
-
-        if (event.getStatus() != OutboxEventStatus.PENDING) {
-            log.warn("Event {} is not pending (status: {}), skipping", eventId, event.getStatus());
+        if (validateEvent(eventId, event)) {
             return;
         }
 
         try {
             log.info("Processing tag creation for TIL {} (event: {})", event.getTilId(), eventId);
 
-            // 처리 중 상태로 변경
             event.markAsProcessing();
             outboxRepository.save(event);
 
-            // 실제 태그 생성 로직 호출
             TilCreatedEvent tilCreatedEvent = new TilCreatedEvent(
                     event.getTilId(),
                     event.getTilContent(),
@@ -100,7 +111,6 @@ public class TagCreationOutboxService {
 
             tilTagService.createTagsDirect(tilCreatedEvent);
 
-            // 성공 시 완료 처리
             event.markAsCompleted();
             outboxRepository.save(event);
 
@@ -116,7 +126,7 @@ public class TagCreationOutboxService {
             event.incrementRetryCount();
             event.markAsFailed(e.getMessage());
 
-            // 재시도 가능하면 스케줄링
+            // 재시도 가능하면 스케줄링, 아니면 DLQ로 전송
             if (event.canRetry()) {
                 LocalDateTime nextRetry = LocalDateTime.now()
                         .plusMinutes(5L * event.getRetryCount());
@@ -125,6 +135,9 @@ public class TagCreationOutboxService {
                         "Tag creation rescheduled for TIL {} at {} (retry: {})",
                         event.getTilId(), nextRetry, event.getRetryCount()
                 );
+            } else {
+                // 최대 재시도 횟수 초과 시 DLQ로 전송
+                sendToDLQ(event, e);
             }
 
             outboxRepository.save(event);
@@ -213,5 +226,53 @@ public class TagCreationOutboxService {
         for (Object[] stat : stats) {
             log.info("Status: {}, Count: {}", stat[0], stat[1]);
         }
+    }
+
+    /**
+     * 실패한 이벤트를 DLQ로 전송
+     */
+    private void sendToDLQ(TagCreationOutboxEvent event, Exception exception) {
+        try {
+            String payload = buildEventPayload(event);
+            String stackTrace = getStackTrace(exception);
+            
+            dlqService.sendToDLQ(
+                    "TAG_CREATION_OUTBOX",
+                    event.getId(),
+                    payload,
+                    exception.getMessage(),
+                    stackTrace
+            );
+            
+            log.error("Tag creation event {} sent to DLQ after {} retries", 
+                    event.getId(), event.getRetryCount());
+            
+        } catch (Exception e) {
+            log.error("Failed to send event {} to DLQ", event.getId(), e);
+        }
+    }
+
+    /**
+     * 이벤트 페이로드 생성
+     */
+    private String buildEventPayload(TagCreationOutboxEvent event) {
+        return String.format(
+                "{\"tilId\":%d,\"tilContent\":\"%s\",\"userId\":%d,\"retryCount\":%d,\"scheduledAt\":\"%s\"}",
+                event.getTilId(),
+                event.getTilContent().replace("\"", "\\\""),
+                event.getUserId(),
+                event.getRetryCount(),
+                event.getScheduledAt()
+        );
+    }
+
+    /**
+     * 예외의 스택 트레이스 추출
+     */
+    private String getStackTrace(Exception exception) {
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        exception.printStackTrace(pw);
+        return sw.toString();
     }
 }
