@@ -6,32 +6,36 @@ import com.tilguys.matilda.common.auth.exception.MatildaException;
 import com.tilguys.matilda.tag.domain.TilTagRelations;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.CacheManager;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.function.Supplier;
 
 @Slf4j
-@Component
-public class RecentTilTagsCache {
+@Service
+public class RecentTilTagsCacheService {
 
     private static final String RECENT_TAG_RELATIONS_KEY = "recent:til:relations";
 
     private final org.springframework.cache.Cache globalCache;
     private final Cache<String, TilTagRelations> localCache;
 
-    public RecentTilTagsCache(CacheManager cacheManager) {
+    public RecentTilTagsCacheService(CacheManager cacheManager) {
         org.springframework.cache.Cache resolved = cacheManager.getCache("tilTags");
         if (resolved == null) {
             throw new MatildaException("tilTags 캐시를 찾을 수 없습니다");
         }
         this.globalCache = resolved;
         this.localCache = Caffeine.newBuilder()
-                .expireAfterWrite(Duration.ofSeconds(60))
+                .expireAfterWrite(Duration.ofMinutes(6))
                 .maximumSize(100)
                 .build();
     }
 
-    public TilTagRelations getRecentTagRelations() {
+    /**
+     * 로컬 → 글로벌 → 로더(DB 등) 순으로 조회.
+     */
+    public TilTagRelations getRecentTagRelations(Supplier<TilTagRelations> loader) {
         // 1차: 로컬 메모리 캐시(Caffeine, TTL 적용)
         TilTagRelations local = getRecentTagFromLocal();
         if (local != null) {
@@ -49,8 +53,22 @@ public class RecentTilTagsCache {
             return cached;
         } catch (Exception e) {
             log.error("최근 태그 정보를 가져오는데 실패하였습니다", e);
-            return getRecentTagFromLocal();
         }
+
+        // 3차: 로더(DB)에서 조회 후 두 캐시에 적재
+        TilTagRelations loaded = loader.get();
+        if (loaded != null) {
+            updateRecentTagRelations(loaded);
+        }
+        return loaded;
+    }
+
+    /**
+     * (하위 호환) 로더 없이 호출하는 기존 코드 지원.
+     * 캐시 미스 시 null 반환 가능.
+     */
+    public TilTagRelations getRecentTagRelations() {
+        return getRecentTagRelations(() -> null);
     }
 
     private TilTagRelations getRecentTagFromLocal() {

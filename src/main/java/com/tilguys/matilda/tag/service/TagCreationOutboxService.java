@@ -127,7 +127,6 @@ public class TagCreationOutboxService {
                         event.getTilId(), nextRetry, event.getRetryCount()
                 );
             } else {
-                // 최대 재시도 횟수 초과 시 DLQ로 전송
                 sendToDLQ(event, e);
             }
 

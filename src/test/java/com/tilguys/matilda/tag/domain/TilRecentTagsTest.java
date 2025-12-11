@@ -1,6 +1,6 @@
 package com.tilguys.matilda.tag.domain;
 
-import com.tilguys.matilda.tag.cache.RecentTilTagsCache;
+import com.tilguys.matilda.tag.cache.RecentTilTagsCacheService;
 import com.tilguys.matilda.tag.repository.SubTagRepository;
 import com.tilguys.matilda.tag.repository.TagRepository;
 import com.tilguys.matilda.tag.schedule.TagScheduledJob;
@@ -36,7 +36,7 @@ class TilRecentTagsTest {
     @Autowired
     private TagScheduledJob tagScheduledJob;
     @Autowired
-    private RecentTilTagsCache recentTilTagsCache;
+    private RecentTilTagsCacheService recentTilTagsCacheService;
     @Autowired
     private TagRepository tagRepository;
     @Autowired
@@ -109,11 +109,11 @@ class TilRecentTagsTest {
         tagRepository.saveAll(List.of(tagA, tagB));
         subTagRepository.saveAll(List.of(subTagA1, subTagA2, subTagB1));
 
-        TilTagRelations initiateRecentTagRelations = recentTilTagsCache.getRecentTagRelations();
+        TilTagRelations initiateRecentTagRelations = recentTilTagsCacheService.getRecentTagRelations();
 
         tagScheduledJob.updateRecentTagRelations();
 
-        TilTagRelations recentTagRelations = recentTilTagsCache.getRecentTagRelations();
+        TilTagRelations recentTagRelations = recentTilTagsCacheService.getRecentTagRelations();
         assertThat(initiateRecentTagRelations.getKeywordTagMap()).isEmpty();
         assertThat(recentTagRelations.getKeywordTagMap()
                 .size()).isGreaterThan(0);
