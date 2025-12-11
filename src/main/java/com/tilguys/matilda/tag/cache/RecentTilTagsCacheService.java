@@ -8,7 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -16,6 +18,9 @@ import java.util.function.Supplier;
 public class RecentTilTagsCacheService {
 
     private static final String RECENT_TAG_RELATIONS_KEY = "recent:til:relations";
+    // Jitter 설정
+    private static final int MIN_DELAY_MS = 2000;   // 최소 지연(ms)
+    private static final int MAX_DELAY_MS = 5000;   // 최대 지연(ms)
 
     private final org.springframework.cache.Cache globalCache;
     private final Cache<String, TilTagRelations> localCache;
@@ -25,9 +30,10 @@ public class RecentTilTagsCacheService {
         if (resolved == null) {
             throw new MatildaException("tilTags 캐시를 찾을 수 없습니다");
         }
+        
         this.globalCache = resolved;
         this.localCache = Caffeine.newBuilder()
-                .expireAfterWrite(Duration.ofMinutes(6))
+                .expireAfter(new JitterExpiry())
                 .maximumSize(100)
                 .build();
     }
@@ -41,6 +47,9 @@ public class RecentTilTagsCacheService {
         if (local != null) {
             return local;
         }
+
+        // 로컬 미스 → 중앙(글로벌/DB) 조회 전에 확률적 Jitter로 스탬피드 분산
+        maybeApplyJitterBackoff();
 
         try {
             // 2차: 글로벌 캐시(예: Redis)
@@ -56,6 +65,7 @@ public class RecentTilTagsCacheService {
         }
 
         // 3차: 로더(DB)에서 조회 후 두 캐시에 적재
+        maybeApplyJitterBackoff(); // 글로벌 미스 후 DB 호출 전에도 한 번 더 분산
         TilTagRelations loaded = loader.get();
         if (loaded != null) {
             updateRecentTagRelations(loaded);
@@ -68,7 +78,7 @@ public class RecentTilTagsCacheService {
      * 캐시 미스 시 null 반환 가능.
      */
     public TilTagRelations getRecentTagRelations() {
-        return getRecentTagRelations(() -> null);
+        return getRecentTagRelations(this::emptyRelations);
     }
 
     private TilTagRelations getRecentTagFromLocal() {
@@ -79,5 +89,39 @@ public class RecentTilTagsCacheService {
         // 원본 업데이트 후 두 캐시에 저장
         localCache.put(RECENT_TAG_RELATIONS_KEY, recentTagRelations);
         globalCache.put(RECENT_TAG_RELATIONS_KEY, recentTagRelations);
+    }
+
+    /**
+     * 캐시 무효화 (로컬/글로벌).
+     */
+    public void invalidate(List<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
+        for (String key : keys) {
+            localCache.invalidate(key);
+        }
+    }
+
+    private TilTagRelations emptyRelations() {
+        return new TilTagRelations(
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyMap()
+        );
+    }
+
+    /**
+     * 캐시 스탬피드 완화를 위한 확률적 무작위 대기.
+     */
+    private void maybeApplyJitterBackoff() {
+        long delayMs = ThreadLocalRandom.current()
+                .nextLong(MIN_DELAY_MS, MAX_DELAY_MS + 1); // [min, max] 포함
+        try {
+            Thread.sleep(delayMs);
+        } catch (InterruptedException ie) {
+            Thread.currentThread()
+                    .interrupt();
+        }
     }
 }
