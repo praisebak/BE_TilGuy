@@ -65,9 +65,6 @@ public class TagCreationOutboxService {
 
         outboxRepository.save(outboxEvent);
 
-        log.info("Tag creation scheduled for TIL {}", tilCreatedEvent.getTilId());
-
-        // 즉시 비동기 처리 시도
         processEventAsync(outboxEvent.getId());
     }
 
@@ -75,14 +72,9 @@ public class TagCreationOutboxService {
      * 비동기로 이벤트 처리
      */
     @Async
+    @Transactional
     public void processEventAsync(Long eventId) {
-        try {
-            // 약간의 지연 후 처리 (동시성 이슈 방지)
-            Thread.sleep(100);
-            processEvent(eventId);
-        } catch (Exception e) {
-            log.error("Async tag creation processing failed for event {}", eventId, e);
-        }
+        processEvent(eventId);
     }
 
     /**
@@ -103,7 +95,7 @@ public class TagCreationOutboxService {
             event.markAsProcessing();
             outboxRepository.save(event);
 
-            TilCreatedEvent tilCreatedEvent = new TilCr eatedEvent(
+            TilCreatedEvent tilCreatedEvent = new TilCreatedEvent(
                     event.getTilId(),
                     event.getTilContent(),
                     event.getUserId()
