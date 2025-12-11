@@ -7,7 +7,7 @@ services:
       MYSQL_PASSWORD: 3062
       MYSQL_ROOT_PASSWORD: 3062
     ports:
-      - '3309:3306'
+      - "3309:3306"
     volumes:
       - ./matilda-data:/var/lib/mysql
 
@@ -19,16 +19,12 @@ services:
       - ./prometheus:/etc/prometheus
       - prometheus-data:/prometheus
     container_name: "matilda-prometheus"
-    networks:
-      - monitoring
 
   matilda-grafana:
     image: grafana/grafana
     ports:
       - "3000:3000"
     container_name: "matilda-grafana"
-    networks:
-      - monitoring
     depends_on:
       - matilda-prometheus
     volumes:
@@ -41,13 +37,7 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes --requirepass 3062
-    networks:
-      - monitoring
-
-networks:
-  monitoring:
-    driver: bridge
+    command: redis-server --appendonly yes
 
 volumes:
   grafana-data:

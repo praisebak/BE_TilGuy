@@ -57,7 +57,8 @@ public class RecentTilTagsCacheService {
             if (cached == null) {
                 throw new MatildaException("캐시를 가져오는데 실패하였습니다");
             }
-            // 글로벌 캐시 적중 시 로컬도 갱신
+            // 글로벌 캐시 적중 시 TTL 갱신(재저장) + 로컬도 갱신
+            globalCache.put(RECENT_TAG_RELATIONS_KEY, cached);
             localCache.put(RECENT_TAG_RELATIONS_KEY, cached);
             return cached;
         } catch (Exception e) {
