@@ -22,7 +22,7 @@ public interface DLQEventRepository extends JpaRepository<DLQEvent, Long> {
     @Query("SELECT d FROM DLQEvent d WHERE d.alarmSent = false AND d.status = 'PERMANENTLY_FAILED'")
     List<DLQEvent> findEventsNeedingAlarm();
 
-    @Query("SELECT d FROM DLQEvent d WHERE d.status = 'RESOLVED' AND d.resolvedAt < :cutoffDate")
+    @Query("SELECT d FROM DLQEvent d WHERE d.status = 'RESOLVED' AND d.updatedAt < :cutoffDate")
     List<DLQEvent> findOldResolvedEvents(@Param("cutoffDate") LocalDateTime cutoffDate);
 
 }

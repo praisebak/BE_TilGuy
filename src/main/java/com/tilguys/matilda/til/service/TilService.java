@@ -1,6 +1,6 @@
 package com.tilguys.matilda.til.service;
 
-import com.tilguys.matilda.reference.event.ReferenceCreateEvent;
+import com.tilguys.matilda.tag.service.TagCreationOutboxService;
 import com.tilguys.matilda.til.domain.Til;
 import com.tilguys.matilda.til.dto.TilDatesResponse;
 import com.tilguys.matilda.til.dto.TilDefinitionRequest;
@@ -32,6 +32,7 @@ public class TilService {
     private final TilRepository tilRepository;
     private final TilUserService userService;
     private final ApplicationEventPublisher eventPublisher;
+    private final TagCreationOutboxService tilOutboxService;
 
     @Transactional
     public Til createTil(final TilDefinitionRequest tilCreateDto, final long userId) {
@@ -41,7 +42,7 @@ public class TilService {
         Til newTil = tilCreateDto.toEntity(user);
         Til til = tilRepository.save(newTil);
 
-        tilOutboxService.saveOutbox(new TilCreatedEvent(til.getTilId(), til.getContent(), user.getId());
+        tilOutboxService.scheduleTagCreation(new TilCreatedEvent(til.getTilId(), til.getContent(), user.getId()));
 
         return til;
     }
