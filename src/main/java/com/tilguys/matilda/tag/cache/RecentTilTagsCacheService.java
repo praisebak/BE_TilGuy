@@ -33,7 +33,7 @@ public class RecentTilTagsCache {
 
     public TilTagRelations getRecentTagRelations() {
         // 1차: 로컬 메모리 캐시(Caffeine, TTL 적용)
-        TilTagRelations local = localCache.getIfPresent(RECENT_TAG_RELATIONS_KEY);
+        TilTagRelations local = getRecentTagFromLocal();
         if (local != null) {
             return local;
         }
@@ -49,8 +49,12 @@ public class RecentTilTagsCache {
             return cached;
         } catch (Exception e) {
             log.error("최근 태그 정보를 가져오는데 실패하였습니다", e);
-            return localCache.getIfPresent(RECENT_TAG_RELATIONS_KEY);
+            return getRecentTagFromLocal();
         }
+    }
+
+    private TilTagRelations getRecentTagFromLocal() {
+        return localCache.getIfPresent(RECENT_TAG_RELATIONS_KEY);
     }
 
     public void updateRecentTagRelations(TilTagRelations recentTagRelations) {
