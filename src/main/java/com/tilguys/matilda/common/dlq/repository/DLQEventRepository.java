@@ -15,17 +15,11 @@ import java.util.List;
 @Repository
 public interface DLQEventRepository extends JpaRepository<DLQEvent, Long> {
 
-    /**
-     * 재시도 가능한 실패 이벤트 조회
-     */
-    @Query("SELECT d FROM DLQEvent d WHERE d.status = :status AND d.retryCount < d.maxRetryCount")
-    List<DLQEvent> findRetryableEvents(@Param("status") DLQEventStatus status);
 
     /**
      * 알람을 보내야 하는 이벤트 조회
      */
-    @Query("SELECT d FROM DLQEvent d WHERE d.alarmSent = false AND " +
-           "(d.status = 'PERMANENTLY_FAILED' OR d.retryCount >= d.maxRetryCount)")
+    @Query("SELECT d FROM DLQEvent d WHERE d.alarmSent = false AND d.status = 'PERMANENTLY_FAILED'")
     List<DLQEvent> findEventsNeedingAlarm();
 
     @Query("SELECT d FROM DLQEvent d WHERE d.status = 'RESOLVED' AND d.resolvedAt < :cutoffDate")

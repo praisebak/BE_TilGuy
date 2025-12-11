@@ -44,8 +44,7 @@ public class DLQService {
                 .payload(payload)
                 .errorMessage(errorMessage)
                 .stackTrace(stackTrace)
-                .status(DLQEventStatus.FAILED)
-                .maxRetryCount(dlqConfiguration.getMaxRetryCount())
+                .status(DLQEventStatus.PERMANENTLY_FAILED)
                 .build();
 
         dlqEventRepository.save(dlqEvent);
@@ -56,81 +55,8 @@ public class DLQService {
         sendAlarmIfNeeded(dlqEvent.getId());
     }
 
-    /**
-     * DLQ 이벤트 재처리 시도
-     */
-    @Transactional
-    public void retryDLQEvent(Long dlqEventId) {
-        DLQEvent dlqEvent = dlqEventRepository.findById(dlqEventId)
-                .orElseThrow(() -> new IllegalArgumentException("DLQ event not found: " + dlqEventId));
 
-        if (!dlqEvent.canRetry()) {
-            log.warn("DLQ event {} cannot be retried (retry count: {}/{})", 
-                    dlqEventId, dlqEvent.getRetryCount(), dlqEvent.getMaxRetryCount());
-            return;
-        }
 
-        dlqEvent.markAsRetrying();
-        dlqEventRepository.save(dlqEvent);
-
-        log.info("Retrying DLQ event {} (attempt {}/{})", 
-                dlqEventId, dlqEvent.getRetryCount(), dlqEvent.getMaxRetryCount());
-
-        // 실제 재처리 로직은 각 서비스에서 구현
-        // 여기서는 상태만 업데이트
-    }
-
-    /**
-     * DLQ 이벤트를 성공으로 마킹
-     */
-    @Transactional
-    public void markAsResolved(Long dlqEventId) {
-        DLQEvent dlqEvent = dlqEventRepository.findById(dlqEventId)
-                .orElseThrow(() -> new IllegalArgumentException("DLQ event not found: " + dlqEventId));
-
-        dlqEvent.markAsResolved();
-        dlqEventRepository.save(dlqEvent);
-
-        log.info("DLQ event {} marked as resolved", dlqEventId);
-    }
-
-    /**
-     * DLQ 이벤트를 영구 실패로 마킹
-     */
-    @Transactional
-    public void markAsPermanentlyFailed(Long dlqEventId) {
-        DLQEvent dlqEvent = dlqEventRepository.findById(dlqEventId)
-                .orElseThrow(() -> new IllegalArgumentException("DLQ event not found: " + dlqEventId));
-
-        dlqEvent.markAsPermanentlyFailed();
-        dlqEventRepository.save(dlqEvent);
-
-        log.error("DLQ event {} marked as permanently failed", dlqEventId);
-        
-        // 영구 실패 시 알람 전송
-        sendAlarmIfNeeded(dlqEventId);
-    }
-
-    /**
-     * 주기적으로 재시도 가능한 이벤트들 처리
-     */
-    @Scheduled(fixedDelay = 300000) // 5분마다
-    @Transactional
-    public void processRetryableEvents() {
-        List<DLQEvent> retryableEvents = dlqEventRepository.findRetryableEvents(DLQEventStatus.FAILED);
-
-        if (!retryableEvents.isEmpty()) {
-            log.info("Processing {} retryable DLQ events", retryableEvents.size());
-
-            for (DLQEvent event : retryableEvents) {
-                try {
-                    retryDLQEvent(event.getId());
-                } catch (Exception e) {
-                    log.error("Failed to retry DLQ event {}", event.getId(), e);
-                }
-            }
-        }
-    }
 
     /**
      * 주기적으로 알람이 필요한 이벤트들 처리

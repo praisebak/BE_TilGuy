@@ -37,3 +37,22 @@ out/
 .vscode/
 
 matilda-data/**
+
+/logs/
+/heapdump.hprof.hwcache/NBProfiler.nphd
+/heapdump.hprof.hwcache/NBProfiler3002554645670511321.ref
+/heapdump.hprof.hwcache/NBProfiler5454921864535299236.map
+/all_databases.sql
+/src/test/resources/application.properties
+/backup.sql
+/heapdump.hprof
+/img.png
+/matilda-heapdump.hprof
+/matilda_dump.sql
+/tmp.txt
+
+/src/main/resources
+server-0.0.1-SNAPSHOT.jar
+src/.DS_Store
+src/main/.DS_Store
+src/test/.DS_Store

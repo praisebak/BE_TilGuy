@@ -11,17 +11,18 @@ import com.tilguys.matilda.til.event.TilCreatedEvent;
 import com.tilguys.matilda.til.repository.TilRepository;
 import com.tilguys.matilda.user.TilUser;
 import com.tilguys.matilda.user.service.TilUserService;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -34,29 +35,28 @@ public class TilService {
 
     @Transactional
     public Til createTil(final TilDefinitionRequest tilCreateDto, final long userId) {
-        boolean exists = tilRepository.existsByDateAndTilUserIdAndIsDeletedFalse(tilCreateDto.date(), userId);
-        if (exists) {
-            throw new IllegalArgumentException("같은 날에 작성된 게시물이 존재합니다!");
-        }
+        validateExistTil(tilCreateDto, userId);
 
         TilUser user = userService.findById(userId);
         Til newTil = tilCreateDto.toEntity(user);
         Til til = tilRepository.save(newTil);
 
-        eventPublisher.publishEvent(
-                new TilCreatedEvent(til.getTilId(), til.getContent(), user.getId())
-        );
-
-        eventPublisher.publishEvent(
-                new ReferenceCreateEvent(til.getTilId(), til.getContent())
-        );
+        tilOutboxService.saveOutbox(new TilCreatedEvent(til.getTilId(), til.getContent(), user.getId());
 
         return til;
     }
 
+    private void validateExistTil(TilDefinitionRequest tilCreateDto, long userId) {
+        boolean exists = tilRepository.existsByDateAndTilUserIdAndIsDeletedFalse(tilCreateDto.date(), userId);
+        if (exists) {
+            throw new IllegalArgumentException("같은 날에 작성된 게시물이 존재합니다!");
+        }
+    }
+
     @Transactional(readOnly = true)
     public TilDatesResponse getAllTilDatesByUserId(final Long userId) {
-        List<LocalDate> all = tilRepository.findByTilUserId(userId).stream()
+        List<LocalDate> all = tilRepository.findByTilUserId(userId)
+                .stream()
                 .filter(Til::isNotDeleted)
                 .map(Til::getDate)
                 .toList();

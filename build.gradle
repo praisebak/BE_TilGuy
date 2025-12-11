@@ -69,10 +69,12 @@ dependencies {
     implementation 'org.springframework.retry:spring-retry:2.0.5'
     implementation 'org.springframework:spring-aspects:6.1.4'
 
-    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-cache'
 
     implementation 'org.apache.commons:commons-pool2'
+
+    // Redis cache
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 }
 
 configurations.all {

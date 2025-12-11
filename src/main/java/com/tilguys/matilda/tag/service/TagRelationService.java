@@ -48,25 +48,27 @@ public class TagRelationService {
 
         List<TagRelation> tilRelations = new ArrayList<>();
 
+        int count = 0;
         for (Til til : recentWroteTil) {
             List<Tag> tags = til.getTags();
-
             tilRelations.addAll(createRelatedTag(tags));
 
-            if (tilRelations.size() >= BATCH_SAVE_SIZE) {
-                tagRelationRepository.saveAll(tilRelations);
-                tilRelations.clear();
-                entityManager.flush();
-                entityManager.clear();
+            for (TagRelation relation : tilRelations) {
+                entityManager.persist(relation);
+                count++;
+
+                if (count % BATCH_SAVE_SIZE == 0) {
+                    entityManager.flush();
+                    entityManager.clear();
+                }
             }
+            tilRelations.clear();
         }
 
-        if (!tilRelations.isEmpty()) {
-            tagRelationRepository.saveAll(tilRelations);
-            entityManager.flush();
-            entityManager.clear();
-        }
+        entityManager.flush();
+        entityManager.clear();
     }
+
 
     private List<TagRelation> createRelatedTag(List<Tag> tags) {
         List<TagRelation> tagRelations = new ArrayList<>();

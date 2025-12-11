@@ -103,7 +103,7 @@ public class TagCreationOutboxService {
             event.markAsProcessing();
             outboxRepository.save(event);
 
-            TilCreatedEvent tilCreatedEvent = new TilCreatedEvent(
+            TilCreatedEvent tilCreatedEvent = new TilCr eatedEvent(
                     event.getTilId(),
                     event.getTilContent(),
                     event.getUserId()
@@ -122,7 +122,6 @@ public class TagCreationOutboxService {
                     event.getTilId(), eventId, e.getMessage(), e
             );
 
-            // 실패 처리
             event.incrementRetryCount();
             event.markAsFailed(e.getMessage());
 
@@ -235,7 +234,7 @@ public class TagCreationOutboxService {
         try {
             String payload = buildEventPayload(event);
             String stackTrace = getStackTrace(exception);
-            
+
             dlqService.sendToDLQ(
                     "TAG_CREATION_OUTBOX",
                     event.getId(),
@@ -243,10 +242,12 @@ public class TagCreationOutboxService {
                     exception.getMessage(),
                     stackTrace
             );
-            
-            log.error("Tag creation event {} sent to DLQ after {} retries", 
-                    event.getId(), event.getRetryCount());
-            
+
+            log.error(
+                    "Tag creation event {} sent to DLQ after {} retries",
+                    event.getId(), event.getRetryCount()
+            );
+
         } catch (Exception e) {
             log.error("Failed to send event {} to DLQ", event.getId(), e);
         }
@@ -259,7 +260,8 @@ public class TagCreationOutboxService {
         return String.format(
                 "{\"tilId\":%d,\"tilContent\":\"%s\",\"userId\":%d,\"retryCount\":%d,\"scheduledAt\":\"%s\"}",
                 event.getTilId(),
-                event.getTilContent().replace("\"", "\\\""),
+                event.getTilContent()
+                        .replace("\"", "\\\""),
                 event.getUserId(),
                 event.getRetryCount(),
                 event.getScheduledAt()
