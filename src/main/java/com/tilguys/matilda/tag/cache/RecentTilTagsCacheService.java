@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -18,9 +17,8 @@ import java.util.function.Supplier;
 public class RecentTilTagsCacheService {
 
     private static final String RECENT_TAG_RELATIONS_KEY = "recent:til:relations";
-    // Jitter 설정
-    private static final int MIN_DELAY_MS = 2000;   // 최소 지연(ms)
-    private static final int MAX_DELAY_MS = 5000;   // 최대 지연(ms)
+
+    private static final long MAX_JITTER_MS = 500L;
 
     private final org.springframework.cache.Cache globalCache;
     private final Cache<String, TilTagRelations> localCache;
@@ -113,16 +111,15 @@ public class RecentTilTagsCacheService {
     }
 
     /**
-     * 캐시 스탬피드 완화를 위한 확률적 무작위 대기.
+     * ThreadLocalRandom을 사용한 Jitter 백오프.
      */
     private void maybeApplyJitterBackoff() {
-        long delayMs = ThreadLocalRandom.current()
-                .nextLong(MIN_DELAY_MS, MAX_DELAY_MS + 1); // [min, max] 포함
+        long delayMs = java.util.concurrent.ThreadLocalRandom.current()
+                .nextLong(0, MAX_JITTER_MS);
         try {
             Thread.sleep(delayMs);
         } catch (InterruptedException ie) {
-            Thread.currentThread()
-                    .interrupt();
+            Thread.currentThread().interrupt();
         }
     }
 }

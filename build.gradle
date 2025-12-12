@@ -76,6 +76,9 @@ dependencies {
 
     // Redis cache
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    
+    // Redis distributed lock
+    implementation 'org.springframework.integration:spring-integration-redis'
 }
 
 configurations.all {

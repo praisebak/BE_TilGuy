@@ -10,14 +10,20 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class CacheInvalidationSubscriber implements MessageListener {
 
+    private static final long MAX_JITTER_MS = 500L;
+
     private final RecentTilTagsCacheService recentTilTagsCacheService;
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
 
     @Override
     public void onMessage(Message message, byte[] pattern) {
@@ -32,20 +38,20 @@ public class CacheInvalidationSubscriber implements MessageListener {
         if (keys.isEmpty()) {
             return;
         }
-        applyJitterBackoff();
-        log.info("Received cache invalidation keys={}", keys);
-        recentTilTagsCacheService.invalidate(keys);
+
+        applyJitterBackoff(keys);
     }
 
-    /**
-     * 무효화 폭주 분산용 지연 (2~5초).
-     */
-    private void applyJitterBackoff() {
-        long delayMs = ThreadLocalRandom.current().nextLong(2000, 5001);
-        try {
-            Thread.sleep(delayMs);
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-        }
+    private void applyJitterBackoff(List<String> keys) {
+        long delayMs = ThreadLocalRandom.current()
+                .nextLong(0, MAX_JITTER_MS);
+
+        scheduler.schedule(
+                () -> {
+                    recentTilTagsCacheService.invalidate(keys);
+                },
+                delayMs,
+                TimeUnit.MILLISECONDS
+        );
     }
 }
