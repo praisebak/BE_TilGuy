@@ -39,7 +39,8 @@ public class TagScheduledJob {
         TilTagRelations recentTagRelations = recentTilTagsProvider.load();
         recentTilTagsCacheService.updateRecentTagRelations(recentTagRelations);
         cacheInvalidationPublisher.publish(java.util.List.of("recent:til:relations"));
-        log.info("recent tag 관계 캐싱 완료");
-        
+        log.info("recent tag 관계 캐싱 완료" + recentTagRelations.getKeywordTagMap()
+                .size() + " " + recentTagRelations.getTagRelationMap()
+                .size() + " ");
     }
 }

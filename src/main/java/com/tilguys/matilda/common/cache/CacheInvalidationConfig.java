@@ -26,6 +26,7 @@ public class CacheInvalidationConfig {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(redisConnectionFactory);
         container.addMessageListener(cacheInvalidationSubscriber, new ChannelTopic(topic));
+        container.start();
         return container;
     }
 }

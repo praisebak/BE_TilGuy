@@ -1,17 +1,15 @@
 package com.tilguys.matilda.tag.service;
 
 import com.tilguys.matilda.tag.domain.TagRelation;
-import com.tilguys.matilda.tag.domain.TagRelationLock;
-import com.tilguys.matilda.tag.repository.TagRelationLockRepository;
 import com.tilguys.matilda.tag.repository.TagRelationRepository;
 import com.tilguys.matilda.til.domain.Tag;
 import com.tilguys.matilda.til.domain.Til;
 import com.tilguys.matilda.til.service.TilService;
 import jakarta.persistence.EntityManager;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.integration.redis.util.RedisLockRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.dao.OptimisticLockingFailureException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -19,6 +17,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.Lock;
 
 @Service
 @Slf4j
@@ -26,71 +25,66 @@ public class TagRelationService {
 
     private static final Long TAG_RELATION_RENEW_PERIOD = 500L;
     private static final int BATCH_SAVE_SIZE = 1000;
+    private static final String TAG_RELATION_LOCK_KEY = "TAG_RELATION_LOCK";
 
     private final TagRelationRepository tagRelationRepository;
-    private final TagRelationLockRepository tagRelationLockRepository;
+    private final RedisLockRegistry redisLockRegistry;
     private final TilService tilService;
     private final EntityManager entityManager;
 
     public TagRelationService(
             TagRelationRepository tagRelationRepository,
-            TagRelationLockRepository tagRelationLockRepository,
+            RedisLockRegistry redisLockRegistry,
             TilService tilService,
             EntityManager entityManager
     ) {
         this.tagRelationRepository = tagRelationRepository;
-        this.tagRelationLockRepository = tagRelationLockRepository;
+        this.redisLockRegistry = redisLockRegistry;
         this.tilService = tilService;
         this.entityManager = entityManager;
     }
 
     @Transactional
     public void renewCoreTagsRelation() {
-        if (!acquireLock()) {
+        Lock lock = redisLockRegistry.obtain(TAG_RELATION_LOCK_KEY);
+        boolean acquired = lock.tryLock();
+        if (!acquired) {
             log.info("renewCoreTagsRelation skipped: lock already held");
             return;
         }
 
-        tagRelationRepository.deleteAllInBatch();
-
-        LocalDateTime startDateTime = LocalDate.now()
-                .minusDays(TAG_RELATION_RENEW_PERIOD)
-                .atStartOfDay();
-
-        List<Til> recentWroteTil = tilService.getRecentWroteTil(startDateTime);
-
-        List<TagRelation> tilRelations = new ArrayList<>();
-
-        int count = 0;
-        for (Til til : recentWroteTil) {
-            List<Tag> tags = til.getTags();
-            tilRelations.addAll(createRelatedTag(tags));
-
-            for (TagRelation relation : tilRelations) {
-                entityManager.persist(relation);
-                count++;
-
-                if (count % BATCH_SAVE_SIZE == 0) {
-                    entityManager.flush();
-                    entityManager.clear();
-                }
-            }
-            tilRelations.clear();
-        }
-
-        entityManager.flush();
-        entityManager.clear();
-    }
-
-    private boolean acquireLock() {
         try {
-            TagRelationLock lock = tagRelationLockRepository.findByLockName("TAG_RELATION_LOCK")
-                    .orElseGet(() -> tagRelationLockRepository.save(new TagRelationLock("TAG_RELATION_LOCK")));
-            lock.touch();
-            tagRelationLockRepository.save(lock);
-            return true;
-        } catch (OptimisticLockingFailureException e) {
-            return false;
+            tagRelationRepository.deleteAllInBatch();
+
+            LocalDateTime startDateTime = LocalDate.now()
+                    .minusDays(TAG_RELATION_RENEW_PERIOD)
+                    .atStartOfDay();
+
+            List<Til> recentWroteTil = tilService.getRecentWroteTil(startDateTime);
+
+            List<TagRelation> tilRelations = new ArrayList<>();
+
+            int count = 0;
+            for (Til til : recentWroteTil) {
+                List<Tag> tags = til.getTags();
+                tilRelations.addAll(createRelatedTag(tags));
+
+                for (TagRelation relation : tilRelations) {
+                    entityManager.persist(relation);
+                    count++;
+
+                    if (count % BATCH_SAVE_SIZE == 0) {
+                        entityManager.flush();
+                        entityManager.clear();
+                    }
+                }
+                tilRelations.clear();
+            }
+
+            entityManager.flush();
+            entityManager.clear();
+        } finally {
+            lock.unlock();
         }
     }
 

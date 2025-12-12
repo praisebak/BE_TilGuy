@@ -37,7 +37,18 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass 3062
+
+  redis-exporter:
+    image: oliver006/redis_exporter
+    container_name: redis-exporter
+    environment:
+      - REDIS_ADDR=redis://matilda-redis:6379
+      - REDIS_PASSWORD=3062  # ⚠️ Redis 비밀번호와 일치해야 함
+    ports:
+      - "9121:9121"          # Exporter 포트
+    depends_on:
+      - redis
 
 volumes:
   grafana-data:
