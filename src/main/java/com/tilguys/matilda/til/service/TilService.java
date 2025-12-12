@@ -1,6 +1,7 @@
 package com.tilguys.matilda.til.service;
 
-import com.tilguys.matilda.tag.service.TagCreationOutboxService;
+import com.tilguys.matilda.til.lock.TilCreationLockService;
+import com.tilguys.matilda.reference.event.ReferenceCreateEvent;
 import com.tilguys.matilda.til.domain.Til;
 import com.tilguys.matilda.til.dto.TilDatesResponse;
 import com.tilguys.matilda.til.dto.TilDefinitionRequest;
@@ -11,18 +12,17 @@ import com.tilguys.matilda.til.event.TilCreatedEvent;
 import com.tilguys.matilda.til.repository.TilRepository;
 import com.tilguys.matilda.user.TilUser;
 import com.tilguys.matilda.user.service.TilUserService;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 @Slf4j
 @Service
@@ -32,32 +32,44 @@ public class TilService {
     private final TilRepository tilRepository;
     private final TilUserService userService;
     private final ApplicationEventPublisher eventPublisher;
-    private final TagCreationOutboxService tilOutboxService;
+    private final TilCreationLockService lockService;
 
     @Transactional
     public Til createTil(final TilDefinitionRequest tilCreateDto, final long userId) {
-        validateExistTil(tilCreateDto, userId);
+        LocalDate targetDate = tilCreateDto.date();
+        
+        boolean lockAcquired = lockService.acquireLock(userId, targetDate);
+        if (!lockAcquired) {
+            throw new IllegalStateException("같은 날짜에 TIL을 생성하는 다른 요청이 진행 중입니다. 잠시 후 다시 시도해주세요.");
+        }
 
-        TilUser user = userService.findById(userId);
-        Til newTil = tilCreateDto.toEntity(user);
-        Til til = tilRepository.save(newTil);
+        try {
+            boolean exists = tilRepository.existsByDateAndTilUserIdAndIsDeletedFalse(targetDate, userId);
+            if (exists) {
+                throw new IllegalArgumentException("같은 날에 작성된 게시물이 존재합니다!");
+            }
 
-        tilOutboxService.scheduleTagCreation(new TilCreatedEvent(til.getTilId(), til.getContent(), user.getId()));
+            TilUser user = userService.findById(userId);
+            Til newTil = tilCreateDto.toEntity(user);
+            Til til = tilRepository.save(newTil);
 
-        return til;
-    }
+            eventPublisher.publishEvent(
+                    new TilCreatedEvent(til.getTilId(), til.getContent(), user.getId())
+            );
 
-    private void validateExistTil(TilDefinitionRequest tilCreateDto, long userId) {
-        boolean exists = tilRepository.existsByDateAndTilUserIdAndIsDeletedFalse(tilCreateDto.date(), userId);
-        if (exists) {
-            throw new IllegalArgumentException("같은 날에 작성된 게시물이 존재합니다!");
+            eventPublisher.publishEvent(
+                    new ReferenceCreateEvent(til.getTilId(), til.getContent())
+            );
+
+            return til;
+        } finally {
+            lockService.releaseLock(userId, targetDate);
         }
     }
 
     @Transactional(readOnly = true)
     public TilDatesResponse getAllTilDatesByUserId(final Long userId) {
-        List<LocalDate> all = tilRepository.findByTilUserId(userId)
-                .stream()
+        List<LocalDate> all = tilRepository.findByTilUserId(userId).stream()
                 .filter(Til::isNotDeleted)
                 .map(Til::getDate)
                 .toList();
